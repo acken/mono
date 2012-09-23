@@ -156,6 +156,22 @@ public sealed class TypeDescriptor
 		}
 	}
 
+#if NET_4_0
+	[MonoLimitation ("Security not applied.")]
+	[EditorBrowsable (EditorBrowsableState.Advanced)]
+	public static void AddProviderTransparent (TypeDescriptionProvider provider, object instance)
+	{
+		AddProvider (provider, instance);
+	}
+
+	[MonoLimitation ("Security not applied.")]
+	[EditorBrowsable (EditorBrowsableState.Advanced)]
+	public static void AddProviderTransparent (TypeDescriptionProvider provider, Type type)
+	{
+		AddProvider (provider, type);
+	}
+#endif
+
 	[MonoTODO]
 	public static object CreateInstance (IServiceProvider provider, Type objectType, Type [] argTypes, object [] args)
 	{
@@ -875,6 +891,22 @@ public sealed class TypeDescriptor
 			refreshed (new RefreshEventArgs (type));
 	}
 
+#if NET_4_0
+	[MonoLimitation ("Security not applied.")]
+	[EditorBrowsable (EditorBrowsableState.Advanced)]
+	public static void RemoveProviderTransparent (TypeDescriptionProvider provider, object instance)
+	{
+		RemoveProvider (provider, instance);
+	}
+
+	[MonoLimitation ("Security not applied.")]
+	[EditorBrowsable (EditorBrowsableState.Advanced)]
+	public static void RemoveProviderTransparent (TypeDescriptionProvider provider, Type type)
+	{
+		RemoveProvider (provider, type);
+	}
+#endif
+
 	static void RemoveProvider (TypeDescriptionProvider provider, LinkedList <TypeDescriptionProvider> plist)
 	{
 		LinkedListNode <TypeDescriptionProvider> node = plist.Last;
@@ -1249,19 +1281,6 @@ public sealed class TypeDescriptor
 			else {
 				EventDescriptorCollection events = GetEvents ();
 				_defaultEvent = events [attr.Name];
-#if !NET_2_0
-				// In our test case (TypeDescriptorTest.TestGetDefaultEvent), we have
-				// a scenario where a custom filter adds the DefaultEventAttribute,
-				// but its FilterEvents method removes the event the
-				// DefaultEventAttribute applied to.  .NET 1.x accepts this and returns
-				// the *other* event defined in the class.
-				//
-				// Consequently, we know we have a DefaultEvent, but we need to check
-				// and ensure that the requested event is unfiltered.  If it is, just
-				// grab the first element in the collection.
-				if (_defaultEvent == null && events.Count > 0)
-					_defaultEvent = events [0];
-#endif
 			}
 			_gotDefaultEvent = true;
 			return _defaultEvent;

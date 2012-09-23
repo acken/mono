@@ -15,11 +15,12 @@
 /libtool
 /ltconfig
 /ltmain.sh
-/mono-*.tar.gz
+/mono-*.tar.*
 /*.pc
 /mono.spec
 /mono-core.spec
 /semantic.cache
+/mono.h
 /stamp-h
 /stamp-h.in
 /stamp-h1
@@ -35,3 +36,6 @@
 /ltsugar.m4
 /lt~obsolete.m4
 /ltversion.m4
+*~
+*.suo
+*.csproj.user

@@ -1,9 +1,11 @@
 using System;
+using System.Globalization;
 using System.Collections.Generic;
 using System.Text;
 using Mono.Cecil.Cil;
 using Mono.Cecil.Metadata;
 using System.IO;
+using System.Linq;
 using System.Reflection;
 
 namespace Mono.Debugger.Soft
@@ -11,11 +13,11 @@ namespace Mono.Debugger.Soft
 	public class MethodBodyMirror : Mirror
 	{
 		MethodMirror method;
-		byte[] il;
+		MethodBodyInfo info;
 
-		internal MethodBodyMirror (VirtualMachine vm, MethodMirror method, byte[] il) : base (vm, 0) {
+		internal MethodBodyMirror (VirtualMachine vm, MethodMirror method, MethodBodyInfo info) : base (vm, 0) {
 			this.method = method;
-			this.il = il;
+			this.info = info;
 		}
 
 		public MethodMirror Method {
@@ -24,13 +26,29 @@ namespace Mono.Debugger.Soft
 			}
 		}
 
+		public List<ILExceptionHandler> ExceptionHandlers {
+			get {
+				vm.CheckProtocolVersion (2, 18);
+				return info.clauses.Select (c =>
+				{
+					var handler = new ILExceptionHandler (c.try_offset, c.try_length, (ILExceptionHandlerType) c.flags, c.handler_offset, c.handler_length);
+					if (c.flags == ExceptionClauseFlags.None)
+						handler.CatchType = vm.GetType (c.catch_type_id);
+					else if (c.flags == ExceptionClauseFlags.Filter)
+						handler.FilterOffset = c.filter_offset;
+
+					return handler;
+				}).ToList ();
+			}
+		}
+
 		public byte[] GetILAsByteArray () {
-			return il;
+			return info.il;
 		}
 
 		public List<ILInstruction> Instructions {
 			get {
-				return ReadCilBody (new BinaryReader (new MemoryStream (il)), il.Length);
+				return ReadCilBody (new BinaryReader (new MemoryStream (info.il)), info.il.Length);
 			}
 		}
 
@@ -39,8 +57,42 @@ namespace Mono.Debugger.Soft
 		static OpCode [] OneByteOpCode = new OpCode [0xe0 + 1];
 		static OpCode [] TwoBytesOpCode = new OpCode [0x1e + 1];
 
+		static string EscapeString (string text)
+		{
+			StringBuilder sb = new StringBuilder ();
+
+			sb.Append ('"');
+			for (int i = 0; i < text.Length; i++) {
+				char c = text[i];
+				string txt;
+				switch (c) {
+				case '"': txt = "\\\""; break;
+				case '\0': txt = @"\0"; break;
+				case '\\': txt = @"\\"; break;
+				case '\a': txt = @"\a"; break;
+				case '\b': txt = @"\b"; break;
+				case '\f': txt = @"\f"; break;
+				case '\v': txt = @"\v"; break;
+				case '\n': txt = @"\n"; break;
+				case '\r': txt = @"\r"; break;
+				case '\t': txt = @"\t"; break;
+				default:
+					if (char.GetUnicodeCategory (c) == UnicodeCategory.OtherNotAssigned) {
+						sb.AppendFormat ("\\u{0:X4}", (int) c);
+					} else {
+						sb.Append (c);
+					}
+					continue;
+				}
+				sb.Append (txt);
+			}
+			sb.Append ('"');
+
+			return sb.ToString ();
+		}
+
 		// Adapted from Cecil
-	    List<ILInstruction> ReadCilBody (BinaryReader br, int code_size)
+		List<ILInstruction> ReadCilBody (BinaryReader br, int code_size)
 		{
 			long start = br.BaseStream.Position;
 			ILInstruction last = null;
@@ -105,28 +157,23 @@ namespace Mono.Debugger.Soft
 						instr.Operand = br.ReadByte ();
 					break;
 				case OperandType.ShortInlineVar :
-					br.ReadByte ();
-					//instr.Operand = GetVariable (body, br.ReadByte ());
+					instr.Operand = br.ReadByte ();
 					break;
-				case OperandType.ShortInlineParam :
-					br.ReadByte ();
-					//instr.Operand = GetParameter (body, br.ReadByte ());
+				case OperandType.ShortInlineArg :
+					instr.Operand = br.ReadByte ();
 					break;
 				case OperandType.InlineSig :
 					br.ReadInt32 ();
 					//instr.Operand = GetCallSiteAt (br.ReadInt32 (), context);
 					break;
 				case OperandType.InlineI :
-					br.ReadInt32 ();
-					//instr.Operand = br.ReadInt32 ();
+					instr.Operand = br.ReadInt32 ();
 					break;
 				case OperandType.InlineVar :
-					br.ReadInt16 ();
-					//instr.Operand = GetVariable (body, br.ReadInt16 ());
+					instr.Operand = br.ReadInt16 ();
 					break;
-				case OperandType.InlineParam :
-					br.ReadInt16 ();
-					//instr.Operand = GetParameter (body, br.ReadInt16 ());
+				case OperandType.InlineArg :
+					instr.Operand = br.ReadInt16 ();
 					break;
 				case OperandType.InlineI8 :
 					instr.Operand = br.ReadInt64 ();
@@ -141,7 +188,7 @@ namespace Mono.Debugger.Soft
 					token = br.ReadInt32 ();
 					t = vm.conn.Method_ResolveToken (Method.Id, token);
 					if (t.Type == TokenType.STRING)
-						instr.Operand = t.Str;
+						instr.Operand = EscapeString (t.Str);
 					break;
 				case OperandType.InlineField :
 				case OperandType.InlineMethod :

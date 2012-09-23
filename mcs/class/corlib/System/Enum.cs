@@ -167,7 +167,7 @@ namespace System
 			names = other.names;
 			name_hash = other.name_hash;
 		}
-
+		
 		internal static void GetInfo (Type enumType, out MonoEnumInfo info)
 		{
 			/* First check the thread-local cache without locking */
@@ -187,18 +187,9 @@ namespace System
 
 			get_enum_info (enumType, out info);
 
-			IComparer ic = null;
 			Type et = Enum.GetUnderlyingType (enumType);
-			if (et == typeof (int))
-				ic = int_comparer;
-			else if (et == typeof (short))
-				ic = short_comparer;
-			else if (et == typeof (sbyte))
-				ic = sbyte_comparer;
-			else if (et == typeof (long))
-				ic = long_comparer;
+			SortEnums (et, info.values, info.names);
 			
-			Array.Sort (info.values, info.names, ic);
 			if (info.names.Length > 50) {
 				info.name_hash = new Hashtable (info.names.Length);
 				for (int i = 0; i <  info.names.Length; ++i)
@@ -208,6 +199,21 @@ namespace System
 			lock (global_cache_monitor) {
 				global_cache [enumType] = cached;
 			}
+		}
+		
+		internal static void SortEnums (Type et, Array values, Array names)
+		{
+			IComparer ic = null;
+			if (et == typeof (int))
+				ic = int_comparer;
+			else if (et == typeof (short))
+				ic = short_comparer;
+			else if (et == typeof (sbyte))
+				ic = sbyte_comparer;
+			else if (et == typeof (long))
+				ic = long_comparer;
+			
+			Array.Sort (values, names, ic);
 		}
 	};
 
@@ -431,8 +437,8 @@ namespace System
 
 				return FindPosition (enumType, value, info.values) >= 0;
 			} else {
-				throw new ArgumentException("The value parameter is not the correct type."
-					+ "It must be type String or the same type as the underlying type"
+				throw new ArgumentException("The value parameter is not the correct type. "
+					+ "It must be type String or the same type as the underlying type "
 					+ "of the Enum.");
 			}
 		}
@@ -619,7 +625,7 @@ namespace System
 			return true;
 		}
 
-#if BOOTSTRAP_NET_4_0 || NET_4_0 || MOONLIGHT
+#if NET_4_0 || MOONLIGHT || MOBILE
 		public static bool TryParse<TEnum> (string value, out TEnum result) where TEnum : struct
 		{
 			return TryParse (value, false, out result);
@@ -1012,11 +1018,12 @@ namespace System
 			}
 			return retVal;
 		}
-#if NET_4_0 || MOONLIGHT
+#if NET_4_0 || MOONLIGHT || MOBILE
 		public bool HasFlag (Enum flag)
 		{
-			ulong mvalue = Convert.ToUInt64 (get_value (), null);
-			ulong fvalue = Convert.ToUInt64 (flag, null);
+			var val = get_value ();
+			ulong mvalue = GetValue (val, Type.GetTypeCode (val.GetType ()));
+			ulong fvalue = GetValue (flag, Type.GetTypeCode (flag.GetType ()));
 
 			return ((mvalue & fvalue) == fvalue);
 		}

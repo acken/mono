@@ -117,7 +117,11 @@ namespace System.Net {
 					ExactDomain = true;
 				} else {
 					domain = value;
-					ExactDomain = (value [0] != '.');
+					IPAddress test;
+					if (IPAddress.TryParse (value, out test))
+						ExactDomain = true;
+					else
+						ExactDomain = false;
 				}
 			}
 		}
@@ -196,6 +200,7 @@ namespace System.Net {
 
 		internal int [] Ports {
 			get { return ports; }
+			set { ports = value; }
 		}
 
 		public bool Secure {
@@ -237,9 +242,9 @@ namespace System.Net {
 			}
 		}
 
-		public override bool Equals (Object obj) 
+		public override bool Equals (Object comparand) 
 		{
-			System.Net.Cookie c = obj as System.Net.Cookie;			
+			System.Net.Cookie c = comparand as System.Net.Cookie;			
 			
 			return c != null &&
 			       String.Compare (this.name, c.name, true, CultureInfo.InvariantCulture) == 0 &&
@@ -289,8 +294,6 @@ namespace System.Net {
 
 			if (!String.IsNullOrEmpty (path))
 				result.Append ("; $Path=").Append (path);
-			else if (uri != null)
-				result.Append ("; $Path=/").Append (path);
 
 			bool append_domain = (uri == null) || (uri.Host != domain);
 			if (append_domain && !String.IsNullOrEmpty (domain))

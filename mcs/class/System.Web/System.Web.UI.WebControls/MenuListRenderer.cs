@@ -290,7 +290,6 @@ namespace System.Web.UI.WebControls
 		protected override void RenderMenuItem (HtmlTextWriter writer, MenuItem item, bool vertical, bool notLast, bool isFirst, OwnerContext oc)
 		{
 			Menu owner = Owner;
-			string clientID = oc.ClientID;
 			bool displayChildren = owner.DisplayChildren (item);
 			bool isDynamicItem = IsDynamicItem (owner, item);
 			int itemLevel = item.Depth + 1;
@@ -343,7 +342,7 @@ namespace System.Web.UI.WebControls
 			if (displayChildren)
 				owner.RenderMenu (writer, item.ChildItems, vertical, isDynamicItem, itemLevel, notLast);
 
-			if (itemLevel > 1)
+			if (itemLevel > 0)
 				writer.RenderEndTag (); // </li>
 		}
 

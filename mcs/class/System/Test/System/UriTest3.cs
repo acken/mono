@@ -504,7 +504,7 @@ namespace MonoTests.System
 
 			Uri a = new Uri ("http://www.mono-project.com:808/foo");
 			Uri b = new Uri (a, "../docs?queryyy#% %20%23%25bar");
-			//Assert.AreEqual ("http://www.mono-project.com:808/docs?queryyy#% %20%23%25bar", b.OriginalString, "#2");
+			Assert.AreEqual ("http://www.mono-project.com:808/docs?queryyy#% %20%23%25bar", b.OriginalString, "#2");
 
 			Uri c = new Uri ("http://www.mono-project.com:808/foo");
 			Uri d = new Uri (a, "../docs?queryyy#%20%23%25bar");
@@ -623,6 +623,19 @@ namespace MonoTests.System
 							: base(DefaultOptions)
 			{
 			}
+		}
+
+		[Test]
+		public void DomainLabelLength ()
+		{
+			UriHostNameType type = Uri.CheckHostName ("3.141592653589793238462643383279502884197169399375105820974944592.com");
+			Assert.AreEqual (UriHostNameType.Dns, type, "DomainLabelLength#1");
+			type = Uri.CheckHostName ("3141592653589793238462643383279502884197169399375105820974944592.com");
+			Assert.AreEqual (UriHostNameType.Unknown, type, "DomainLabelLength#2");
+			type = Uri.CheckHostName ("3.1415926535897932384626433832795028841971693993751058209749445923.com");
+			Assert.AreEqual (UriHostNameType.Unknown, type, "DomainLabelLength#2");
+			type = Uri.CheckHostName ("3.141592653589793238462643383279502884197169399375105820974944592._om");
+			Assert.AreEqual (UriHostNameType.Unknown, type, "DomainLabelLength#3");
 		}
 	}
 }

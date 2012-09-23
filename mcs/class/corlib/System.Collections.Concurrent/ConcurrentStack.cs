@@ -22,7 +22,7 @@
 //
 //
 
-#if NET_4_0
+#if NET_4_0 || MOBILE
 
 using System;
 using System.Threading;
@@ -33,7 +33,8 @@ using System.Runtime.Serialization;
 namespace System.Collections.Concurrent
 {
 	
-	
+	[System.Diagnostics.DebuggerDisplay ("Count = {Count}")]
+	[System.Diagnostics.DebuggerTypeProxy (typeof (CollectionDebuggerView<>))]
 	public class ConcurrentStack<T> : IProducerConsumerCollection<T>, IEnumerable<T>,
 	                                  ICollection, IEnumerable
 	{
@@ -46,14 +47,29 @@ namespace System.Collections.Concurrent
 		Node head = null;
 		
 		int count;
+
+		class NodeObjectPool : ObjectPool<Node> {
+			protected override Node Creator ()
+			{
+				return new Node ();
+			}
+		}
+		static readonly NodeObjectPool pool = new NodeObjectPool ();
+
+		static Node ZeroOut (Node node)
+		{
+			node.Value = default(T);
+			node.Next = null;
+			return node;
+		}
 		
 		public ConcurrentStack ()
 		{
 		}
 		
-		public ConcurrentStack (IEnumerable<T> enumerable)
+		public ConcurrentStack (IEnumerable<T> collection)
 		{
-			foreach (T item in enumerable) 
+			foreach (T item in collection) 
 				Push (item);
 		}
 		
@@ -63,10 +79,10 @@ namespace System.Collections.Concurrent
 			return true;
 		}
 		
-		public void Push (T element)
+		public void Push (T item)
 		{
-			Node temp = new Node ();
-			temp.Value = element;
+			Node temp = pool.Take ();
+			temp.Value = item;
 			do {
 			  temp.Next = head;
 			} while (Interlocked.CompareExchange (ref head, temp, temp.Next) != temp.Next);
@@ -74,19 +90,19 @@ namespace System.Collections.Concurrent
 			Interlocked.Increment (ref count);
 		}
 
-		public void PushRange (T[] values)
+		public void PushRange (T[] items)
 		{
-			PushRange (values, 0, values.Length);
+			PushRange (items, 0, items.Length);
 		}
 		
-		public void PushRange (T[] values, int start, int length)
+		public void PushRange (T[] items, int startIndex, int count)
 		{
 			Node insert = null;
 			Node first = null;
 			
-			for (int i = start; i < length; i++) {
-				Node temp = new Node ();
-				temp.Value = values[i];
+			for (int i = startIndex; i < count; i++) {
+				Node temp = pool.Take ();
+				temp.Value = items[i];
 				temp.Next = insert;
 				insert = temp;
 				
@@ -98,34 +114,47 @@ namespace System.Collections.Concurrent
 				first.Next = head;
 			} while (Interlocked.CompareExchange (ref head, insert, first.Next) != first.Next);
 			
-			Interlocked.Add (ref count, length);
+			Interlocked.Add (ref count, count);
 		}
 		
-		public bool TryPop (out T value)
+		public bool TryPop (out T result)
 		{
 			Node temp;
 			do {
 				temp = head;
 				// The stak is empty
 				if (temp == null) {
-					value = default (T);
+					result = default (T);
 					return false;
 				}
 			} while (Interlocked.CompareExchange (ref head, temp.Next, temp) != temp);
 			
 			Interlocked.Decrement (ref count);
 			
-			value = temp.Value;
+			result = temp.Value;
+			pool.Release (ZeroOut (temp));
+
 			return true;
 		}
 
-		public int TryPopRange (T[] values)
+		public int TryPopRange (T[] items)
 		{
-			return TryPopRange (values, 0, values.Length);
+			if (items == null)
+				throw new ArgumentNullException ("items");
+			return TryPopRange (items, 0, items.Length);
 		}
 
-		public int TryPopRange (T[] values, int startIndex, int count)
+		public int TryPopRange (T[] items, int startIndex, int count)
 		{
+			if (items == null)
+				throw new ArgumentNullException ("items");
+			if (startIndex < 0 || startIndex >= items.Length)
+				throw new ArgumentOutOfRangeException ("startIndex");
+			if (count < 0)
+				throw new ArgumentOutOfRangeException ("count");
+			if (startIndex + count > items.Length)
+				throw new ArgumentException ("startIndex + count is greater than the length of items.");
+
 			Node temp;
 			Node end;
 			
@@ -134,7 +163,7 @@ namespace System.Collections.Concurrent
 				if (temp == null)
 					return -1;
 				end = temp;
-				for (int j = 0; j < count - 1; j++) {
+				for (int j = 0; j < count; j++) {
 					end = end.Next;
 					if (end == null)
 						break;
@@ -142,22 +171,25 @@ namespace System.Collections.Concurrent
 			} while (Interlocked.CompareExchange (ref head, end, temp) != temp);
 			
 			int i;
-			for (i = startIndex; i < count && temp != null; i++) {
-				values[i] = temp.Value;
+			for (i = startIndex; i < startIndex + count && temp != null; i++) {
+				items[i] = temp.Value;
+				end = temp;
 				temp = temp.Next;
+				pool.Release (ZeroOut (end));
 			}
+			Interlocked.Add (ref this.count, -(i - startIndex));
 			
-			return i - 1;
+			return i - startIndex;
 		}
 		
-		public bool TryPeek (out T value)
+		public bool TryPeek (out T result)
 		{
 			Node myHead = head;
 			if (myHead == null) {
-				value = default (T);
+				result = default (T);
 				return false;
 			}
-			value = myHead.Value;
+			result = myHead.Value;
 			return true;
 		}
 		
@@ -192,18 +224,34 @@ namespace System.Collections.Concurrent
 		
 		void ICollection.CopyTo (Array array, int index)
 		{
+			if (array == null)
+				throw new ArgumentNullException ("array");
+			if (array.Rank > 1)
+				throw new ArgumentException ("The array can't be multidimensional");
+			if (array.GetLowerBound (0) != 0)
+				throw new ArgumentException ("The array needs to be 0-based");
+
 			T[] dest = array as T[];
 			if (dest == null)
-				return;
+				throw new ArgumentException ("The array cannot be cast to the collection element type", "array");
 			CopyTo (dest, index);
 		}
 		
-		public void CopyTo (T[] dest, int index)
+		public void CopyTo (T[] array, int index)
 		{
+			if (array == null)
+				throw new ArgumentNullException ("array");
+			if (index < 0)
+				throw new ArgumentOutOfRangeException ("index");
+			if (index >= array.Length)
+				throw new ArgumentException ("index is equals or greather than array length", "index");
+
 			IEnumerator<T> e = InternalGetEnumerator ();
 			int i = index;
 			while (e.MoveNext ()) {
-				dest[i++] = e.Current;
+				if (i == array.Length - index)
+					throw new ArgumentException ("The number of elememts in the collection exceeds the capacity of array", "array");
+				array[i++] = e.Current;
 			}
 		}
 		
@@ -223,9 +271,7 @@ namespace System.Collections.Concurrent
 		
 		public T[] ToArray ()
 		{
-			T[] dest = new T [count];
-			CopyTo (dest, 0);
-			return dest;
+			return new List<T> (this).ToArray ();
 		}
 		
 		public int Count {

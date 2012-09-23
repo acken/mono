@@ -20,6 +20,12 @@ namespace MonoTests.System.Reflection
 		One,
 		Two
 	}
+
+	class ParamsArrayTest
+	{
+		public ParamsArrayTest (params string[] strings)
+		{}
+	}
 	
 	class SampleClass {
 		public static void SampleMethod (object o) { }
@@ -100,6 +106,14 @@ namespace MonoTests.System.Reflection
 	{
 		Binder binder = Type.DefaultBinder;
 
+		[Test]
+		public void ParamsArrayTestCast ()
+		{
+			string[] test_args = { "one", "two", "three" };
+			var o = Activator.CreateInstance (typeof (ParamsArrayTest), new object[] { test_args });
+			Assert.IsNotNull (o, "#A1");
+		}
+		
 		[Test]
 		[ExpectedException (typeof (ArgumentException))]
 		public void SelectPropertyTestNull1 ()
@@ -860,6 +874,32 @@ namespace MonoTests.System.Reflection
 					argNames);
 
 			Assert.AreEqual ("Hello\nExtra\nWorld\n", sw.ToString ());
+		}
+
+		[Test] // #1321
+		public void BindToMethodNamedArgs_2 ()
+		{
+			StringWriter sw = new StringWriter ();
+			sw.NewLine = "\n";
+
+			object[] argValues = new object [] {5, "AB", sw};
+			string [] argNames = new string [] {"second", "first", "output"};
+
+			typeof (BinderTest).InvokeMember ("TestMethod",
+					BindingFlags.InvokeMethod,
+					null,
+					null,
+					argValues,
+					null,
+					null,
+					argNames);
+
+			Assert.AreEqual ("AB\n5\n", sw.ToString ());
+		}
+
+		public static void TestMethod (string first, int second, TextWriter output) {
+			output.WriteLine (first);
+			output.WriteLine (second);
 		}
 
 		public class Bug41691

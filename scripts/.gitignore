@@ -5,9 +5,11 @@
 /caspol
 /cert2spc
 /certmgr
+/cccheck
 /ccrewrite
 /chktrust
 /cilc
+/crlupdate
 /csharp
 /csharp2
 /disco
@@ -64,6 +66,7 @@
 /mozroots
 /nunit-console
 /nunit-console2
+/nunit-console4
 /pdb2mdb
 /permview
 /peverify
@@ -89,3 +92,4 @@
 /xbuild
 /xsd
 /xsd2
+/*.bat

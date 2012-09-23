@@ -1,5 +1,5 @@
 //
-// HttpRequestChannel.cs
+// HttpRequestChannel.cs 
 //
 // Author:
 //	Atsushi Enomoto <atsushi@ximian.com>
@@ -56,6 +56,15 @@ namespace System.ServiceModel.Channels
 			get { return source.MessageEncoder; }
 		}
 
+#if NET_2_1
+		public override T GetProperty<T> ()
+		{
+			if (typeof (T) == typeof (IHttpCookieContainerManager))
+				return source.GetProperty<T> ();
+			return base.GetProperty<T> ();
+		}
+#endif
+
 		// Request
 
 		public override Message Request (Message message, TimeSpan timeout)
@@ -81,11 +90,17 @@ namespace System.ServiceModel.Channels
 			result.WebRequest = web_request;
 			web_request.Method = "POST";
 			web_request.ContentType = Encoder.ContentType;
-
 #if NET_2_1
-			var cmgr = source.GetProperty<IHttpCookieContainerManager> ();
-			if (cmgr != null)
-				((HttpWebRequest) web_request).CookieContainer = cmgr.CookieContainer;
+			HttpWebRequest hwr = (web_request as HttpWebRequest);
+#if MOONLIGHT
+			if (hwr.SupportsCookieContainer) {
+#endif
+				var cmgr = source.GetProperty<IHttpCookieContainerManager> ();
+				if (cmgr != null)
+					hwr.CookieContainer = cmgr.CookieContainer;
+#if MOONLIGHT
+			}
+#endif
 #endif
 
 #if !MOONLIGHT // until we support NetworkCredential like SL4 will do.
@@ -135,16 +150,22 @@ namespace System.ServiceModel.Channels
 
 			// apply HttpRequestMessageProperty if exists.
 			bool suppressEntityBody = false;
-#if !NET_2_1
 			string pname = HttpRequestMessageProperty.Name;
 			if (message.Properties.ContainsKey (pname)) {
 				HttpRequestMessageProperty hp = (HttpRequestMessageProperty) message.Properties [pname];
-				web_request.Headers.Clear ();
-				web_request.Headers.Add (hp.Headers);
+				foreach (var key in hp.Headers.AllKeys)
+					if (!WebHeaderCollection.IsRestricted (key))
+						web_request.Headers [key] = hp.Headers [key];
 				web_request.Method = hp.Method;
 				// FIXME: do we have to handle hp.QueryString ?
 				if (hp.SuppressEntityBody)
 					suppressEntityBody = true;
+			}
+#if !NET_2_1
+			if (source.ClientCredentials != null) {
+				var cred = source.ClientCredentials;
+				if ((cred.ClientCertificate != null) && (cred.ClientCertificate.Certificate != null))
+					((HttpWebRequest)web_request).ClientCertificates.Add (cred.ClientCertificate.Certificate);
 			}
 #endif
 
@@ -202,6 +223,29 @@ namespace System.ServiceModel.Channels
 					channelResult.Complete (we);
 					return;
 				}
+
+
+				var hrr2 = (HttpWebResponse) res;
+				
+				if ((int) hrr2.StatusCode >= 400 && (int) hrr2.StatusCode < 500) {
+					Exception exception = new WebException (
+						String.Format ("There was an error on processing web request: Status code {0}({1}): {2}",
+							       (int) hrr2.StatusCode, hrr2.StatusCode, hrr2.StatusDescription), null,
+						WebExceptionStatus.ProtocolError, hrr2); 
+					
+					if ((int) hrr2.StatusCode == 404) {
+						// Throw the same exception .NET does
+						exception = new EndpointNotFoundException (
+							"There was no endpoint listening at {0} that could accept the message. This is often caused by an incorrect address " +
+							"or SOAP action. See InnerException, if present, for more details.",
+							exception);
+					}
+					
+					channelResult.Complete (exception);
+					return;
+				}
+
+
 				try {
 					// The response might contain SOAP fault. It might not.
 					resstr = res.GetResponseStream ();
@@ -222,7 +266,7 @@ namespace System.ServiceModel.Channels
 				// TODO: unit test to make sure an empty response never throws
 				// an exception at this level
 				if (hrr.ContentLength == 0) {
-					ret = Message.CreateMessage (MessageVersion.Default, String.Empty);
+					ret = Message.CreateMessage (Encoder.MessageVersion, String.Empty);
 				} else {
 
 					using (var responseStream = resstr) {
@@ -244,8 +288,15 @@ namespace System.ServiceModel.Channels
 				}
 
 				var rp = new HttpResponseMessageProperty () { StatusCode = hrr.StatusCode, StatusDescription = hrr.StatusDescription };
+#if MOONLIGHT
+				if (hrr.SupportsHeaders) {
+					foreach (string key in hrr.Headers)
+						rp.Headers [key] = hrr.Headers [key];
+				}
+#else
 				foreach (var key in hrr.Headers.AllKeys)
 					rp.Headers [key] = hrr.Headers [key];
+#endif
 				ret.Properties.Add (HttpResponseMessageProperty.Name, rp);
 
 				channelResult.Response = ret;
@@ -281,7 +332,7 @@ namespace System.ServiceModel.Channels
 
 		protected override void OnAbort ()
 		{
-			foreach (var web_request in web_requests)
+			foreach (var web_request in web_requests.ToArray ())
 				web_request.Abort ();
 			web_requests.Clear ();
 		}

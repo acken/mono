@@ -10,6 +10,7 @@ LIBRARY = System.ServiceModel.dll
 LIB_MCS_FLAGS = \
 		/nowarn:414,169,67,3005,436,219,618 \
 		/unsafe \
+		/d:TRACE \
 	        /r:System.dll \
 	        /r:System.Xml.dll \
 		/r:System.Core.dll \
@@ -44,6 +45,9 @@ TEST_EXTRA_FILES = \
 	System.ServiceModel_test_net_3_0.dll.config \
 	Test/config/* \
 	Test/Resources/* \
+	Test/XmlFiles/* \
+	Test/System.ServiceModel.Channels/soap-fault*.xml \
+	Test/System.ServiceModel.Channels/binary-message.raw \
 	Test/System.ServiceModel.Description/dump.xml
 
 EXTRA_DISTFILES = $(RESOURCE_FILES) $(TEST_EXTRA_FILES)
@@ -51,7 +55,7 @@ EXTRA_DISTFILES = $(RESOURCE_FILES) $(TEST_EXTRA_FILES)
 # Useful for debugging under Visual Studio 2005
 # NO_SIGN_ASSEMBLY = yes
 
-VALID_PROFILE := $(filter 2.0 2.1 4.0, $(FRAMEWORK_VERSION))
+VALID_PROFILE := $(filter 2 4, $(FRAMEWORK_VERSION_MAJOR))
 ifndef VALID_PROFILE
 LIBRARY_NAME = dummy-System.ServiceModel.dll
 NO_INSTALL = yes
